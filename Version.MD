@@ -21,7 +21,7 @@ Choose the next version based on the changes made before editing the version val
 Example version:
 
 ```text
-1.0.4
+1.0.5
 ```
 
 Use semantic versioning to decide which part of the version must be increased:
@@ -33,9 +33,9 @@ Use semantic versioning to decide which part of the version must be increased:
 Examples:
 
 ```text
-1.0.4 -> 1.0.5  Patch
-1.0.4 -> 1.1.0  Minor
-1.0.4 -> 2.0.0  Major
+1.0.5 -> 1.0.6  Patch
+1.0.5 -> 1.1.0  Minor
+1.0.5 -> 2.0.0  Major
 ```
 
 Also update any documentation that shows the current version, such as:
@@ -129,13 +129,13 @@ Create a commit with a message that describes the changes made.
 Example:
 
 ```powershell
-git commit -m "Release 1.0.4"
+git commit -m "Release 1.0.5"
 ```
 
 For feature releases, the commit message may include the main change:
 
 ```powershell
-git commit -m "Release 1.0.4 with updated publisher guidance"
+git commit -m "Release 1.0.5 with updated publisher guidance"
 ```
 
 ## Tag
@@ -145,7 +145,7 @@ Create an annotated tag using only the release version.
 Example:
 
 ```powershell
-git tag -a 1.0.4 -m "Release 1.0.4"
+git tag -a 1.0.5 -m "Release 1.0.5"
 ```
 
 ## Push
@@ -159,7 +159,7 @@ git push origin main
 Push the release tag:
 
 ```powershell
-git push origin 1.0.4
+git push origin 1.0.5
 ```
 
 ## Final Check

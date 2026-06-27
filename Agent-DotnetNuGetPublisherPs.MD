@@ -66,7 +66,7 @@ git submodule update --remote --recursive Tools/DotnetNuGetPublisherPs
 After `Tools/DevSecretsManagerPs` exists, apply the instructions from:
 
 ```text
-Tools/DevSecretsManagerPs/SecretsManager-Agent.MD
+Tools/DevSecretsManagerPs/Agent-DevSecretsManagerPs.MD
 ```
 
 Do this before configuring or running `NugetPublisher.ps1`.
@@ -85,7 +85,7 @@ The root copy gives future agents a predictable instruction file without searchi
 
 Stage only the publisher submodule and the copied publisher agent file when something actually changed.
 
-Do not stage `Tools/DevSecretsManagerPs` or `SecretsManager-Agent.MD` from this guide. The `SecretsManager-Agent.MD` workflow is responsible for its own stage and commit operations.
+Do not stage `Tools/DevSecretsManagerPs` or `Agent-DevSecretsManagerPs.MD` from this guide. The `Agent-DevSecretsManagerPs.MD` workflow is responsible for its own stage and commit operations.
 
 There are changes when:
 
@@ -189,8 +189,8 @@ When working in a repository that uses this tool:
 - Treat `Tools/DotnetNuGetPublisherPs` as the required NuGet publisher submodule path.
 - Use `git submodule add` only when the submodule does not already exist.
 - If a submodule already exists in the required path, synchronize, initialize, and update it.
-- Apply `Tools/DevSecretsManagerPs/SecretsManager-Agent.MD` before using the publisher.
-- Keep updated copies of `SecretsManager-Agent.MD` and `Agent-DotnetNuGetPublisherPs.MD` in the consuming repository root when their source files changed.
+- Apply `Tools/DevSecretsManagerPs/Agent-DevSecretsManagerPs.MD` before using the publisher.
+- Keep updated copies of `Agent-DevSecretsManagerPs.MD` and `Agent-DotnetNuGetPublisherPs.MD` in the consuming repository root when their source files changed.
 - Do not introduce a `NUGET_SECRETS_MANAGER_PATH` secret.
 - Do not introduce output directory, skip pack, skip push, or no-restore secrets.
 - Keep the active publisher secret list limited to the five required NuGet publisher secrets.

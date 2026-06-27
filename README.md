@@ -17,7 +17,7 @@ Current version:
 Returns:
 
 ```text
-1.0.4
+1.0.5
 ```
 
 It uses [`Satancito/DevSecretsManagerPs`](https://github.com/Satancito/DevSecretsManagerPs) to store local values such as the NuGet API key, source feed, project path, build configuration, and symbol packaging option.
@@ -74,7 +74,7 @@ git submodule update --remote --recursive Tools/DotnetNuGetPublisherPs
 Apply the instructions from:
 
 ```text
-Tools/DevSecretsManagerPs/SecretsManager-Agent.MD
+Tools/DevSecretsManagerPs/Agent-DevSecretsManagerPs.MD
 ```
 
 Then copy this repository's agent guide to the containing repository root:
