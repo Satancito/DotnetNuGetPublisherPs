@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.6
+
+- Added `-Publish` support for non-empty environment variables to override matching NuGet publisher secrets.
+
 ## 1.0.5
 
 - Updated documentation references for the renamed DevSecretsManagerPs agent file: `Agent-DevSecretsManagerPs.MD`.

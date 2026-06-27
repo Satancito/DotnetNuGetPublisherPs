@@ -17,7 +17,7 @@ Current version:
 Returns:
 
 ```text
-1.0.5
+1.0.6
 ```
 
 It uses [`Satancito/DevSecretsManagerPs`](https://github.com/Satancito/DevSecretsManagerPs) to store local values such as the NuGet API key, source feed, project path, build configuration, and symbol packaging option.
@@ -271,7 +271,7 @@ After all required values are configured, run:
 .\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1 -Publish
 ```
 
-`-Publish` is intentionally strict. Every required secret must exist and have a non-empty value:
+`-Publish` is intentionally strict. Every required value must resolve to a non-empty value:
 
 ```text
 NUGET_API_KEY
@@ -281,7 +281,18 @@ NUGET_CONFIGURATION
 NUGET_INCLUDE_SYMBOLS
 ```
 
-If any required value is missing, `null`, empty, or invalid, the script fails before running `dotnet build`, `dotnet pack`, or `dotnet nuget push`.
+For each value, an environment variable with the same name has priority when it exists and is not `null`, empty, or whitespace. If the environment variable is missing or empty, the value is read from `DevSecretsManagerPs`.
+
+Example:
+
+```powershell
+$env:NUGET_API_KEY = "temporary-api-key"
+.\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1 -Publish
+```
+
+In that case, `NUGET_API_KEY` comes from the environment and the other values can still come from secrets.
+
+If any required value cannot be resolved from either environment or secrets, or if a value is invalid, the script fails before running `dotnet build`, `dotnet pack`, or `dotnet nuget push`.
 
 ## Publish Flow Details
 

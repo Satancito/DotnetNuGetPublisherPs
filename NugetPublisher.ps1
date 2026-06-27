@@ -32,7 +32,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptVersion = "1.0.5"
+$ScriptVersion = "1.0.6"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
 $IgnoredSetArguments = $false
 $ScriptInvocationStatement = $MyInvocation.Statement
@@ -105,8 +105,9 @@ Modes:
       .\NugetPublisher.ps1 -Set -Source ""
 
   -Publish
-    Builds, packs, and pushes a NuGet package using only configured secrets.
-    Every NuGet publisher secret must exist and have a non-empty value:
+    Builds, packs, and pushes a NuGet package using configured values.
+    Environment variables have priority over secrets when they are not null or empty.
+    Every NuGet publisher value must resolve to a non-empty value:
       NUGET_API_KEY
       NUGET_SOURCE
       NUGET_CSPROJ
@@ -281,16 +282,46 @@ function Get-ConfiguredSecret {
     return [string]$value
 }
 
-function Get-RequiredConfiguredSecret {
+function Get-EnvironmentConfiguredValue {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Name
     )
 
-    $value = Get-ConfiguredSecret -Name $Name
+    $value = [Environment]::GetEnvironmentVariable($Name, "Process")
 
     if ([string]::IsNullOrWhiteSpace($value)) {
-        throw "Required secret '$Name' is missing, null, or empty. Configure it before running -Publish."
+        return $null
+    }
+
+    return [string]$value
+}
+
+function Get-ResolvedConfiguredValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $environmentValue = Get-EnvironmentConfiguredValue -Name $Name
+
+    if (-not [string]::IsNullOrWhiteSpace($environmentValue)) {
+        return $environmentValue
+    }
+
+    return Get-ConfiguredSecret -Name $Name
+}
+
+function Get-RequiredResolvedConfiguredValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $value = Get-ResolvedConfiguredValue -Name $Name
+
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Required value '$Name' is missing, null, or empty. Configure it in an environment variable or secret before running -Publish."
     }
 
     return $value
@@ -318,13 +349,13 @@ function Get-ConfiguredBoolean {
     return $parsed
 }
 
-function Get-RequiredConfiguredBoolean {
+function Get-RequiredResolvedConfiguredBoolean {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Name
     )
 
-    $value = Get-RequiredConfiguredSecret -Name $Name
+    $value = Get-RequiredResolvedConfiguredValue -Name $Name
     $parsed = $false
 
     if (-not [bool]::TryParse($value, [ref]$parsed)) {
@@ -764,10 +795,10 @@ if ($Set) {
     return
 }
 
-$ApiKey = Get-RequiredConfiguredSecret -Name "NUGET_API_KEY"
-$Source = Get-RequiredConfiguredSecret -Name "NUGET_SOURCE"
-$ProjectPath = Get-RequiredConfiguredSecret -Name "NUGET_CSPROJ"
-$Configuration = Get-RequiredConfiguredSecret -Name "NUGET_CONFIGURATION"
+$ApiKey = Get-RequiredResolvedConfiguredValue -Name "NUGET_API_KEY"
+$Source = Get-RequiredResolvedConfiguredValue -Name "NUGET_SOURCE"
+$ProjectPath = Get-RequiredResolvedConfiguredValue -Name "NUGET_CSPROJ"
+$Configuration = Get-RequiredResolvedConfiguredValue -Name "NUGET_CONFIGURATION"
 
 if ($Configuration -notin @("Debug", "Release")) {
     throw "NUGET_CONFIGURATION must be Debug or Release. Current value: $Configuration"
@@ -775,7 +806,7 @@ if ($Configuration -notin @("Debug", "Release")) {
 
 $SkipPack = $DefaultSkipPack
 $SkipPush = $DefaultSkipPush
-$IncludeSymbols = Get-RequiredConfiguredBoolean -Name "NUGET_INCLUDE_SYMBOLS"
+$IncludeSymbols = Get-RequiredResolvedConfiguredBoolean -Name "NUGET_INCLUDE_SYMBOLS"
 $NoRestore = $DefaultNoRestore
 
 if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
@@ -852,7 +883,7 @@ if ($SkipPush) {
 }
 
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
-    throw "NuGet API key is required. Pass -ApiKey or set the NUGET_API_KEY environment variable."
+    throw "NuGet API key is required. Configure NUGET_API_KEY in an environment variable or secret."
 }
 
 foreach ($package in $packages) {

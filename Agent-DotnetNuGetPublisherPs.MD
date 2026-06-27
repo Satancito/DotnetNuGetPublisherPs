@@ -149,7 +149,7 @@ Running the script with no flags must only show usage/help:
 .\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1
 ```
 
-Before publishing, every required secret must exist and have a non-empty value. If any required value is missing, null, empty, or invalid, `-Publish` must fail before running `dotnet build`, `dotnet pack`, or `dotnet nuget push`.
+Before publishing, every required value must resolve to a non-empty value. Environment variables with the same names have priority when they are not null or empty; otherwise values are read from `DevSecretsManagerPs`. If any required value is missing, null, empty, or invalid after resolution, `-Publish` must fail before running `dotnet build`, `dotnet pack`, or `dotnet nuget push`.
 
 The publisher uses only these secrets:
 
