@@ -17,7 +17,7 @@ Current version:
 Returns:
 
 ```text
-1.0.3
+1.0.4
 ```
 
 It uses [`Satancito/DevSecretsManagerPs`](https://github.com/Satancito/DevSecretsManagerPs) to store local values such as the NuGet API key, source feed, project path, build configuration, and symbol packaging option.
@@ -80,7 +80,7 @@ Tools/DevSecretsManagerPs/SecretsManager-Agent.MD
 Then copy this repository's agent guide to the containing repository root:
 
 ```text
-Tools/DotnetNuGetPublisherPs/NugetPublisher-Agent.MD -> NugetPublisher-Agent.MD
+Tools/DotnetNuGetPublisherPs/Agent-DotnetNuGetPublisherPs.MD -> Agent-DotnetNuGetPublisherPs.MD
 ```
 
 ## What This Tool Does

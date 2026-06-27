@@ -21,7 +21,7 @@ Choose the next version based on the changes made before editing the version val
 Example version:
 
 ```text
-1.0.3
+1.0.4
 ```
 
 Use semantic versioning to decide which part of the version must be increased:
@@ -33,16 +33,16 @@ Use semantic versioning to decide which part of the version must be increased:
 Examples:
 
 ```text
-1.0.3 -> 1.0.4  Patch
-1.0.3 -> 1.1.0  Minor
-1.0.3 -> 2.0.0  Major
+1.0.4 -> 1.0.5  Patch
+1.0.4 -> 1.1.0  Minor
+1.0.4 -> 2.0.0  Major
 ```
 
 Also update any documentation that shows the current version, such as:
 
 ```text
 README.md
-NugetPublisher-Agent.MD
+Agent-DotnetNuGetPublisherPs.MD
 ```
 
 ## Update Help And Documentation
@@ -59,11 +59,12 @@ Also update repository documentation when the change affects usage, installation
 
 ```text
 README.md
-NugetPublisher-Agent.MD
+Agent-DotnetNuGetPublisherPs.MD
+CHANGELOG.md
 Version.MD
 ```
 
-Keep the README as the source of truth for tool usage and available commands. Keep `NugetPublisher-Agent.MD` focused on installation, dependency layout, and agent workflow only.
+Keep the README as the source of truth for tool usage and available commands. Keep `Agent-DotnetNuGetPublisherPs.MD` focused on installation, dependency layout, and agent workflow only.
 
 ## Validate Before Commit
 
@@ -116,7 +117,7 @@ env.json
 Example:
 
 ```powershell
-git add NugetPublisher.ps1 README.md NugetPublisher-Agent.MD Version.MD
+git add NugetPublisher.ps1 README.md Agent-DotnetNuGetPublisherPs.MD Version.MD CHANGELOG.md
 ```
 
 Adjust the staged file list to match the actual changes.
@@ -128,13 +129,13 @@ Create a commit with a message that describes the changes made.
 Example:
 
 ```powershell
-git commit -m "Release 1.0.3"
+git commit -m "Release 1.0.4"
 ```
 
 For feature releases, the commit message may include the main change:
 
 ```powershell
-git commit -m "Release 1.0.3 with updated publisher guidance"
+git commit -m "Release 1.0.4 with updated publisher guidance"
 ```
 
 ## Tag
@@ -144,7 +145,7 @@ Create an annotated tag using only the release version.
 Example:
 
 ```powershell
-git tag -a 1.0.3 -m "Release 1.0.3"
+git tag -a 1.0.4 -m "Release 1.0.4"
 ```
 
 ## Push
@@ -158,7 +159,7 @@ git push origin main
 Push the release tag:
 
 ```powershell
-git push origin 1.0.3
+git push origin 1.0.4
 ```
 
 ## Final Check

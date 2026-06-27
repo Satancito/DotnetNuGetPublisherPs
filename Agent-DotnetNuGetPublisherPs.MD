@@ -76,7 +76,7 @@ Do this before configuring or running `NugetPublisher.ps1`.
 Copy this file from the publisher submodule into the root of the consuming repository:
 
 ```text
-Tools/DotnetNuGetPublisherPs/NugetPublisher-Agent.MD -> NugetPublisher-Agent.MD
+Tools/DotnetNuGetPublisherPs/Agent-DotnetNuGetPublisherPs.MD -> Agent-DotnetNuGetPublisherPs.MD
 ```
 
 The root copy gives future agents a predictable instruction file without searching inside the submodule.
@@ -91,18 +91,18 @@ There are changes when:
 
 - The `Tools/DotnetNuGetPublisherPs` submodule was added.
 - The `Tools/DotnetNuGetPublisherPs` submodule revision changed after synchronize, initialize, or update.
-- The copied `NugetPublisher-Agent.MD` changed.
+- The copied `Agent-DotnetNuGetPublisherPs.MD` changed.
 
 Typical first publisher install:
 
 ```powershell
-git add .gitmodules Tools/DotnetNuGetPublisherPs NugetPublisher-Agent.MD
+git add .gitmodules Tools/DotnetNuGetPublisherPs Agent-DotnetNuGetPublisherPs.MD
 ```
 
 Typical publisher update:
 
 ```powershell
-git add Tools/DotnetNuGetPublisherPs NugetPublisher-Agent.MD
+git add Tools/DotnetNuGetPublisherPs Agent-DotnetNuGetPublisherPs.MD
 ```
 
 If only one publisher path changed, stage only that changed path.
@@ -190,7 +190,7 @@ When working in a repository that uses this tool:
 - Use `git submodule add` only when the submodule does not already exist.
 - If a submodule already exists in the required path, synchronize, initialize, and update it.
 - Apply `Tools/DevSecretsManagerPs/SecretsManager-Agent.MD` before using the publisher.
-- Keep updated copies of `SecretsManager-Agent.MD` and `NugetPublisher-Agent.MD` in the consuming repository root when their source files changed.
+- Keep updated copies of `SecretsManager-Agent.MD` and `Agent-DotnetNuGetPublisherPs.MD` in the consuming repository root when their source files changed.
 - Do not introduce a `NUGET_SECRETS_MANAGER_PATH` secret.
 - Do not introduce output directory, skip pack, skip push, or no-restore secrets.
 - Keep the active publisher secret list limited to the five required NuGet publisher secrets.
@@ -217,5 +217,5 @@ When changing the version, update:
 ```text
 NugetPublisher.ps1
 README.md
-NugetPublisher-Agent.MD
+Agent-DotnetNuGetPublisherPs.MD
 ```

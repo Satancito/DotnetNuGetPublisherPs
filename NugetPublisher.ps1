@@ -32,7 +32,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptVersion = "1.0.3"
+$ScriptVersion = "1.0.4"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
 $IgnoredSetArguments = $false
 $ScriptInvocationStatement = $MyInvocation.Statement
