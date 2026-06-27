@@ -6,7 +6,7 @@ The consuming repository must install two tools as Git submodules:
 
 ```text
 Tools/DevSecretsManagerPs
-Tools/DotnetNugetPublisher
+Tools/DotnetNuGetPublisherPs
 ```
 
 `NugetPublisher.ps1` depends on `DevSecretsManagerPs` by relative path:
@@ -39,26 +39,26 @@ git submodule update --init --recursive Tools/DevSecretsManagerPs
 git submodule update --remote --recursive Tools/DevSecretsManagerPs
 ```
 
-## Step 2: Add Or Update DotnetNugetPublisher
+## Step 2: Add Or Update DotnetNuGetPublisherPs
 
 From the root of the consuming repository, ensure this project exists as a submodule at:
 
 ```text
-Tools/DotnetNugetPublisher
+Tools/DotnetNuGetPublisherPs
 ```
 
 If it does not exist, add it:
 
 ```powershell
-git submodule add https://github.com/Satancito/DotnetNuGetPublisherPs.git Tools/DotnetNugetPublisher
+git submodule add https://github.com/Satancito/DotnetNuGetPublisherPs.git Tools/DotnetNuGetPublisherPs
 ```
 
 If it already exists as a submodule in that directory, synchronize, initialize, and update it:
 
 ```powershell
-git submodule sync --recursive Tools/DotnetNugetPublisher
-git submodule update --init --recursive Tools/DotnetNugetPublisher
-git submodule update --remote --recursive Tools/DotnetNugetPublisher
+git submodule sync --recursive Tools/DotnetNuGetPublisherPs
+git submodule update --init --recursive Tools/DotnetNuGetPublisherPs
+git submodule update --remote --recursive Tools/DotnetNuGetPublisherPs
 ```
 
 ## Step 3: Apply DevSecretsManagerPs Instructions
@@ -76,7 +76,7 @@ Do this before configuring or running `NugetPublisher.ps1`.
 Copy this file from the publisher submodule into the root of the consuming repository:
 
 ```text
-Tools/DotnetNugetPublisher/NugetPublisher-Agent.MD -> NugetPublisher-Agent.MD
+Tools/DotnetNuGetPublisherPs/NugetPublisher-Agent.MD -> NugetPublisher-Agent.MD
 ```
 
 The root copy gives future agents a predictable instruction file without searching inside the submodule.
@@ -89,20 +89,20 @@ Do not stage `Tools/DevSecretsManagerPs` or `SecretsManager-Agent.MD` from this 
 
 There are changes when:
 
-- The `Tools/DotnetNugetPublisher` submodule was added.
-- The `Tools/DotnetNugetPublisher` submodule revision changed after synchronize, initialize, or update.
+- The `Tools/DotnetNuGetPublisherPs` submodule was added.
+- The `Tools/DotnetNuGetPublisherPs` submodule revision changed after synchronize, initialize, or update.
 - The copied `NugetPublisher-Agent.MD` changed.
 
 Typical first publisher install:
 
 ```powershell
-git add .gitmodules Tools/DotnetNugetPublisher NugetPublisher-Agent.MD
+git add .gitmodules Tools/DotnetNuGetPublisherPs NugetPublisher-Agent.MD
 ```
 
 Typical publisher update:
 
 ```powershell
-git add Tools/DotnetNugetPublisher NugetPublisher-Agent.MD
+git add Tools/DotnetNuGetPublisherPs NugetPublisher-Agent.MD
 ```
 
 If only one publisher path changed, stage only that changed path.
@@ -130,7 +130,7 @@ git commit -m "Update NuGet publisher and secrets manager submodules"
 Read the publisher README to learn how to use the tool:
 
 ```text
-Tools/DotnetNugetPublisher/README.md
+Tools/DotnetNuGetPublisherPs/README.md
 ```
 
 The README is the source of truth for `NugetPublisher.ps1` commands, flags, required secrets, examples, and publishing behavior.
@@ -140,13 +140,13 @@ The README is the source of truth for `NugetPublisher.ps1` commands, flags, requ
 Publishing must be explicit:
 
 ```powershell
-.\Tools\DotnetNugetPublisher\NugetPublisher.ps1 -Publish
+.\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1 -Publish
 ```
 
 Running the script with no flags must only show usage/help:
 
 ```powershell
-.\Tools\DotnetNugetPublisher\NugetPublisher.ps1
+.\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1
 ```
 
 Before publishing, every required secret must exist and have a non-empty value. If any required value is missing, null, empty, or invalid, `-Publish` must fail before running `dotnet build`, `dotnet pack`, or `dotnet nuget push`.
@@ -186,7 +186,7 @@ These defaults are not stored in secrets.
 When working in a repository that uses this tool:
 
 - Treat `Tools/DevSecretsManagerPs` as the required secrets manager submodule path.
-- Treat `Tools/DotnetNugetPublisher` as the required NuGet publisher submodule path.
+- Treat `Tools/DotnetNuGetPublisherPs` as the required NuGet publisher submodule path.
 - Use `git submodule add` only when the submodule does not already exist.
 - If a submodule already exists in the required path, synchronize, initialize, and update it.
 - Apply `Tools/DevSecretsManagerPs/SecretsManager-Agent.MD` before using the publisher.
@@ -194,13 +194,13 @@ When working in a repository that uses this tool:
 - Do not introduce a `NUGET_SECRETS_MANAGER_PATH` secret.
 - Do not introduce output directory, skip pack, skip push, or no-restore secrets.
 - Keep the active publisher secret list limited to the five required NuGet publisher secrets.
-- Use `.\Tools\DotnetNugetPublisher\NugetPublisher.ps1 -Init` before other publisher secret operations in a new environment.
-- Use `.\Tools\DotnetNugetPublisher\NugetPublisher.ps1 -Set ...` to update publisher secrets instead of editing JSON manually.
-- Use `.\Tools\DotnetNugetPublisher\NugetPublisher.ps1 -Edit` only when the user explicitly wants to edit the underlying secrets file.
+- Use `.\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1 -Init` before other publisher secret operations in a new environment.
+- Use `.\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1 -Set ...` to update publisher secrets instead of editing JSON manually.
+- Use `.\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1 -Edit` only when the user explicitly wants to edit the underlying secrets file.
 - Do not clear, overwrite, stage, commit, or publish actual API keys or secret values.
-- Keep `Tools/DotnetNugetPublisher/README.md` updated when command behavior, flags, required secrets, or publish flow changes.
+- Keep `Tools/DotnetNuGetPublisherPs/README.md` updated when command behavior, flags, required secrets, or publish flow changes.
 - Keep this guide focused on installation, dependency layout, and agent workflow.
-- Verify `.\Tools\DotnetNugetPublisher\NugetPublisher.ps1 -Version` after version changes.
+- Verify `.\Tools\DotnetNuGetPublisherPs\NugetPublisher.ps1 -Version` after version changes.
 
 ## Versioning
 
