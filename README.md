@@ -17,7 +17,7 @@ Current version:
 Returns:
 
 ```text
-1.0.0
+1.0.1
 ```
 
 It uses [`Satancito/DevSecretsManagerPs`](https://github.com/Satancito/DevSecretsManagerPs) to store local values such as the NuGet API key, source feed, project path, build configuration, and symbol packaging option.

@@ -4,20 +4,11 @@ This file defines the required workflow for publishing changes from this reposit
 
 ## Release Flow
 
-Before committing or tagging a release, clear any local secrets created while validating this repository.
+Do not clear, reset, overwrite, stage, or commit local secrets as part of a release.
 
-`DotnetNuGetPublisherPs` stores its values through the sibling `DevSecretsManagerPs` tool. From this repository root, the expected development layout is:
+Secrets are machine-local values managed by `DevSecretsManagerPs`. They are not release artifacts, they are not part of the Git working tree, and they can vary per developer or build machine.
 
-```text
-..\DevSecretsManagerPs\SecretsManager.ps1
-.\NugetPublisher.ps1
-```
-
-If local publisher secrets were initialized during validation, clear them with:
-
-```powershell
-..\DevSecretsManagerPs\SecretsManager.ps1 -Clear -Force
-```
+Only validate that tracked files do not contain real API keys or secret values.
 
 Update the script version in:
 
