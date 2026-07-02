@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.4
+
 - Added HTTP NuGet source push support by using a temporary `NuGet.Config` with `allowInsecureConnections="true"` when `NUGET_SOURCE` uses `http://`.
 
 ## 2.0.3

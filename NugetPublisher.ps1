@@ -49,7 +49,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptVersion = "2.0.3"
+$ScriptVersion = "2.0.4"
 $ProvidedParameterNames = @()
 $ScriptInvocationStatement = if (-not [string]::IsNullOrWhiteSpace($MyInvocation.Line)) { $MyInvocation.Line } else { $MyInvocation.Statement }
 
