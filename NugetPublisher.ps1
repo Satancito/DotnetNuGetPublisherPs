@@ -10,7 +10,8 @@ param(
     [switch]$Edit,
 
     [Parameter(ParameterSetName = "Edit")]
-    [ValidateNotNullOrEmpty()]
+    [AllowNull()]
+    [AllowEmptyString()]
     [string]$Editor,
 
     [Parameter(Mandatory = $true, ParameterSetName = "Set")]
@@ -19,35 +20,125 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = "Publish")]
     [switch]$Publish,
 
+    [Parameter(ParameterSetName = "Set")]
+    [AllowNull()]
+    [AllowEmptyString()]
+    [object]$ApiKey,
+
+    [Parameter(ParameterSetName = "Set")]
+    [AllowNull()]
+    [AllowEmptyString()]
+    [object]$Source,
+
+    [Parameter(ParameterSetName = "Set")]
+    [AllowNull()]
+    [AllowEmptyString()]
+    [object]$Configuration,
+
+    [Parameter(ParameterSetName = "Set")]
+    [AllowNull()]
+    [System.Nullable[bool]]$IncludeSymbols,
+
     [Parameter(ParameterSetName = "Help")]
     [Alias("h", "usage")]
     [switch]$Help,
 
     [Parameter(ParameterSetName = "Version")]
     [Alias("v")]
-    [switch]$Version,
-
-    [Parameter(ParameterSetName = "Set", ValueFromRemainingArguments = $true)]
-    [string[]]$RemainingArguments
+    [switch]$Version
 )
 
 $ErrorActionPreference = "Stop"
 $ScriptVersion = "1.0.6"
-$ProvidedParameterNames = @($PSBoundParameters.Keys)
-$IgnoredSetArguments = $false
-$ScriptInvocationStatement = $MyInvocation.Statement
+$ProvidedParameterNames = @()
+$ScriptInvocationStatement = if (-not [string]::IsNullOrWhiteSpace($MyInvocation.Line)) { $MyInvocation.Line } else { $MyInvocation.Statement }
 
 $RequiredSecretNames = @(
     "NUGET_API_KEY",
     "NUGET_SOURCE",
-    "NUGET_CSPROJ",
     "NUGET_CONFIGURATION",
     "NUGET_INCLUDE_SYMBOLS"
 )
 
+$DefaultSecretValues = [ordered]@{
+    NUGET_API_KEY = $null
+    NUGET_SOURCE = "https://api.nuget.org/v3/index.json"
+    NUGET_CONFIGURATION = "Release"
+    NUGET_INCLUDE_SYMBOLS = $true
+}
+
 $DefaultSkipPack = $false
 $DefaultSkipPush = $false
 $DefaultNoRestore = $false
+
+function Get-ProvidedParameterNames {
+    $boundNames = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($entry in $PSBoundParameters.GetEnumerator()) {
+        if ($entry.Value -is [System.Management.Automation.SwitchParameter]) {
+            if ($entry.Value.IsPresent) {
+                $boundNames.Add($entry.Key)
+            }
+
+            continue
+        }
+
+        if ($null -ne $entry.Value) {
+            $boundNames.Add($entry.Key)
+        }
+    }
+
+    $source = if (-not [string]::IsNullOrWhiteSpace($ScriptInvocationStatement)) {
+        $ScriptInvocationStatement
+    }
+    else {
+        [Environment]::CommandLine
+    }
+
+    $errors = $null
+    $tokens = [System.Management.Automation.PSParser]::Tokenize($source, [ref]$errors)
+
+    if ($errors -and $errors.Count -gt 0) {
+        return @($boundNames | Select-Object -Unique)
+    }
+
+    $names = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($boundName in $boundNames) {
+        $names.Add($boundName)
+    }
+
+    foreach ($token in $tokens) {
+        if ($token.Type -ne "CommandParameter") {
+            continue
+        }
+
+        $name = $token.Content.TrimStart("-")
+        if ($name.Contains(":")) {
+            $name = $name.Split(":", 2)[0]
+        }
+
+        switch ($name.ToLowerInvariant()) {
+            "h" { $names.Add("Help") }
+            "help" { $names.Add("Help") }
+            "usage" { $names.Add("Help") }
+            "v" { $names.Add("Version") }
+            "version" { $names.Add("Version") }
+            "init" { $names.Add("Init") }
+            "list" { $names.Add("List") }
+            "edit" { $names.Add("Edit") }
+            "editor" { $names.Add("Editor") }
+            "set" { $names.Add("Set") }
+            "apikey" { $names.Add("ApiKey") }
+            "source" { $names.Add("Source") }
+            "configuration" { $names.Add("Configuration") }
+            "includesymbols" { $names.Add("IncludeSymbols") }
+            "publish" { $names.Add("Publish") }
+        }
+    }
+
+    return @($names | Select-Object -Unique)
+}
 
 function Show-Usage {
     $usage = @"
@@ -57,7 +148,7 @@ Usage:
   .\NugetPublisher.ps1 -Init
   .\NugetPublisher.ps1 -List
   .\NugetPublisher.ps1 -Edit [-Editor <editor>]
-  .\NugetPublisher.ps1 -Set [-ApiKey <value>] [-Source <value>] [-Csproj <value>] [-Configuration <Debug|Release>] [options]
+  .\NugetPublisher.ps1 -Set [-ApiKey <value>] [-Source <value>] [-Configuration <Debug|Release>] [options]
   .\NugetPublisher.ps1 -Publish
   .\NugetPublisher.ps1 -Help
   .\NugetPublisher.ps1 -h
@@ -70,15 +161,14 @@ Usage:
 
 Modes:
   -Init
-    Initializes DevSecretsManagerPs and creates these secrets with null when missing:
-      NUGET_API_KEY
-      NUGET_SOURCE
-      NUGET_CSPROJ
-      NUGET_CONFIGURATION
-      NUGET_INCLUDE_SYMBOLS
+    Initializes DevSecretsManagerPs and creates these secrets when missing:
+      NUGET_API_KEY: null
+      NUGET_SOURCE: https://api.nuget.org/v3/index.json
+      NUGET_CONFIGURATION: Release
+      NUGET_INCLUDE_SYMBOLS: true
 
   -List
-    Lists only the NuGet publisher secrets in table format.
+    Returns JSON with only the NuGet publisher secrets handled by this tool.
 
   -Edit
     Opens the DevSecretsManagerPs secrets file in an editor.
@@ -91,17 +181,19 @@ Modes:
   -Set
     Updates only the values explicitly provided.
     Null values are ignored.
-    Empty strings are saved as empty secret values.
+    Empty strings are saved as empty secret values for string parameters.
+    Non-empty -Source values must exist. HTTP 401/403 responses count as valid existing endpoints.
     -Configuration stores NUGET_CONFIGURATION as Debug or Release.
+    Invalid -Configuration values return false.
+    -IncludeSymbols accepts PowerShell boolean values and is stored as a JSON boolean.
 
     Examples:
       .\NugetPublisher.ps1 -Set -ApiKey "<nuget-api-key>"
       .\NugetPublisher.ps1 -Set -Source "https://api.nuget.org/v3/index.json"
-      .\NugetPublisher.ps1 -Set -Csproj "..\MyPackage\MyPackage.csproj"
       .\NugetPublisher.ps1 -Set -Configuration Debug
       .\NugetPublisher.ps1 -Set -Configuration Release
-      .\NugetPublisher.ps1 -Set -IncludeSymbols True
-      .\NugetPublisher.ps1 -Set -IncludeSymbols False
+      .\NugetPublisher.ps1 -Set -IncludeSymbols `$true
+      .\NugetPublisher.ps1 -Set -IncludeSymbols `$false
       .\NugetPublisher.ps1 -Set -Source ""
 
   -Publish
@@ -110,35 +202,143 @@ Modes:
     Every NuGet publisher value must resolve to a non-empty value:
       NUGET_API_KEY
       NUGET_SOURCE
-      NUGET_CSPROJ
       NUGET_CONFIGURATION
       NUGET_INCLUDE_SYMBOLS
+    Project.json in the consumer project root must contain a non-empty Project value pointing to the package .csproj.
     Internal defaults:
       SkipPack: False
       SkipPush: False
       NoRestore: False
+    Returns capturable JSON with Success, Command, Stage, Published, ProjectPath, Configuration, Source, IncludeSymbols, Packages, and SymbolPackages.
 
     Examples:
       .\NugetPublisher.ps1 -Publish
 
   -Version
-    Prints the script version.
+    Returns the script version as a JSON string.
 
 Options:
   -Configuration <value>
     Build configuration for dotnet build and dotnet pack. Valid values: Debug, Release.
-    For -Publish, NUGET_CONFIGURATION must be configured in secrets.
+    For -Publish, NUGET_CONFIGURATION must resolve from environment or secrets.
 
   -IncludeSymbols
     Passes --include-symbols and --include-source to dotnet pack.
-    For -Publish, NUGET_INCLUDE_SYMBOLS must be configured as True or False.
+    For -Publish, NUGET_INCLUDE_SYMBOLS must resolve as a boolean from environment or secrets.
+
+  -Source
+    NuGet source endpoint. Null and empty values are allowed by -Set. Non-empty values must exist before storing.
 "@
 
-    Write-Host $usage
+    return $usage
 }
 
 function Show-Version {
-    Write-Output $ScriptVersion
+    return $ScriptVersion
+}
+
+function Get-SensitiveValues {
+    $values = [System.Collections.Generic.List[string]]::new()
+
+    $environmentApiKey = Get-EnvironmentConfiguredValue -Name "NUGET_API_KEY"
+    if (-not [string]::IsNullOrWhiteSpace($environmentApiKey)) {
+        $values.Add($environmentApiKey)
+    }
+
+    try {
+        $secretApiKey = Get-ConfiguredSecret -Name "NUGET_API_KEY"
+        if ($null -ne $secretApiKey -and -not [string]::IsNullOrWhiteSpace([string]$secretApiKey)) {
+            $values.Add([string]$secretApiKey)
+        }
+    }
+    catch {
+        # Masking is best-effort before secrets are initialized.
+    }
+
+    return @($values | Select-Object -Unique)
+}
+
+function Mask-SensitiveText {
+    param(
+        [AllowNull()]
+        [string]$Text
+    )
+
+    if ($null -eq $Text) {
+        return $null
+    }
+
+    $masked = $Text
+    foreach ($sensitiveValue in Get-SensitiveValues) {
+        if ([string]::IsNullOrWhiteSpace($sensitiveValue)) {
+            continue
+        }
+
+        $masked = $masked.Replace($sensitiveValue, "***")
+    }
+
+    return $masked
+}
+
+function Protect-OutputValue {
+    param(
+        [AllowNull()]
+        [object]$Value,
+
+        [string]$PropertyName = ""
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($PropertyName -eq "NUGET_API_KEY" -or $PropertyName -eq "ApiKey") {
+        return "***"
+    }
+
+    if ($Value -is [string]) {
+        return Mask-SensitiveText -Text $Value
+    }
+
+    if ($Value -is [bool] -or $Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal]) {
+        return $Value
+    }
+
+    if ($Value -is [System.Collections.IDictionary]) {
+        $protected = [ordered]@{}
+        foreach ($key in $Value.Keys) {
+            $protected[[string]$key] = Protect-OutputValue -Value $Value[$key] -PropertyName ([string]$key)
+        }
+        return $protected
+    }
+
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        return @($Value | ForEach-Object { Protect-OutputValue -Value $_ })
+    }
+
+    if ($Value -is [PSCustomObject]) {
+        $protected = [ordered]@{}
+        foreach ($property in $Value.PSObject.Properties) {
+            $protected[$property.Name] = Protect-OutputValue -Value $property.Value -PropertyName $property.Name
+        }
+        return [PSCustomObject]$protected
+    }
+
+    return $Value
+}
+
+function Write-JsonOutput {
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        Write-Output "null"
+        return
+    }
+
+    Write-Output ((Protect-OutputValue -Value $Value) | ConvertTo-Json -Depth 100)
 }
 
 function Invoke-LoggedCommand {
@@ -163,26 +363,67 @@ function Invoke-LoggedCommand {
 function Resolve-FullPath {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [string]$Path,
+
+        [string]$BasePath = (Get-Location).Path
     )
 
-    $resolved = Resolve-Path -LiteralPath $Path -ErrorAction SilentlyContinue
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        $candidatePath = $Path
+    }
+    else {
+        $candidatePath = Join-Path $BasePath $Path
+    }
+
+    $resolved = Resolve-Path -LiteralPath $candidatePath -ErrorAction SilentlyContinue
 
     if ($resolved) {
         return $resolved.Path
     }
 
-    return [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Path))
+    return [System.IO.Path]::GetFullPath($candidatePath)
 }
 
 function Resolve-SecretsManagerPath {
-    $resolvedPath = Resolve-FullPath -Path "..\DevSecretsManagerPs\SecretsManager.ps1"
+    $resolvedPath = Resolve-FullPath -Path "..\DevSecretsManagerPs\SecretsManager.ps1" -BasePath $PSScriptRoot
 
     if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
         throw "SecretsManager.ps1 was not found: $resolvedPath"
     }
 
     return $resolvedPath
+}
+
+function Resolve-ConsumerProjectRoot {
+    return Resolve-FullPath -Path "..\.." -BasePath $PSScriptRoot
+}
+
+function Get-ProjectJsonProjectPath {
+    $consumerProjectRoot = Resolve-ConsumerProjectRoot
+    $projectJsonPath = Join-Path $consumerProjectRoot "Project.json"
+
+    if (-not (Test-Path -LiteralPath $projectJsonPath -PathType Leaf)) {
+        throw "Project.json was not found in the consumer project root: $projectJsonPath"
+    }
+
+    try {
+        $projectJson = Get-Content -LiteralPath $projectJsonPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "Project.json could not be parsed as JSON: $projectJsonPath"
+    }
+
+    if (-not ($projectJson.PSObject.Properties.Name -contains "Project")) {
+        throw "Project.json must contain a Project property pointing to the package .csproj."
+    }
+
+    $projectPath = [string]$projectJson.Project
+
+    if ([string]::IsNullOrWhiteSpace($projectPath)) {
+        throw "Project.json Project value is required and must point to the package .csproj."
+    }
+
+    return Resolve-FullPath -Path $projectPath -BasePath $consumerProjectRoot
 }
 
 function Invoke-SecretsManager {
@@ -199,71 +440,111 @@ function Invoke-SecretsManager {
     }
 }
 
+function Get-SecretsFilePath {
+    $managerPath = Resolve-SecretsManagerPath
+    $managerDirectory = Split-Path -Parent $managerPath
+    $envFilePath = Join-Path $managerDirectory "env.json"
+
+    if (-not (Test-Path -LiteralPath $envFilePath -PathType Leaf)) {
+        throw "DevSecretsManagerPs env.json was not found: $envFilePath"
+    }
+
+    try {
+        $envJson = Get-Content -LiteralPath $envFilePath -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "DevSecretsManagerPs env.json could not be parsed as JSON: $envFilePath"
+    }
+
+    $environmentId = [string]$envJson.Id
+    if ([string]::IsNullOrWhiteSpace($environmentId)) {
+        throw "DevSecretsManagerPs env.json must contain an Id value."
+    }
+
+    $homeDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
+        $homeDirectory = [Environment]::GetEnvironmentVariable("HOME")
+    }
+    if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
+        throw "Unable to resolve the user home directory for DevSecretsManagerPs secrets."
+    }
+
+    return Join-Path (Join-Path $homeDirectory ".devsecretsmanager") "$environmentId.json"
+}
+
+function Read-SecretsMap {
+    $secretsFilePath = Get-SecretsFilePath
+
+    if (-not (Test-Path -LiteralPath $secretsFilePath -PathType Leaf)) {
+        return [ordered]@{}
+    }
+
+    $raw = Get-Content -LiteralPath $secretsFilePath -Raw
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return [ordered]@{}
+    }
+
+    try {
+        $json = $raw | ConvertFrom-Json
+    }
+    catch {
+        throw "Secrets file could not be parsed as JSON: $secretsFilePath"
+    }
+
+    $secrets = [ordered]@{}
+    foreach ($property in $json.PSObject.Properties) {
+        $secrets[$property.Name] = $property.Value
+    }
+
+    return $secrets
+}
+
+function Write-SecretsMap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$Secrets
+    )
+
+    $secretsFilePath = Get-SecretsFilePath
+    $secretsDirectory = Split-Path -Parent $secretsFilePath
+
+    if (-not (Test-Path -LiteralPath $secretsDirectory -PathType Container)) {
+        New-Item -ItemType Directory -Path $secretsDirectory | Out-Null
+    }
+
+    $Secrets | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $secretsFilePath -Encoding UTF8
+}
+
 function Initialize-NuGetSecrets {
     Invoke-SecretsManager -Parameters @{ Init = $true } | Out-Null
     $secretStates = [ordered]@{}
+    $secrets = Read-SecretsMap
 
     foreach ($secretName in $RequiredSecretNames) {
-        $created = Invoke-SecretsManager -Parameters @{ Add = $secretName }
-        $secretStates[$secretName] = if ($created) { "Created" } else { "Existing" }
+        if ($secrets.Contains($secretName)) {
+            $secretStates[$secretName] = "Existing"
+            continue
+        }
+
+        $secrets[$secretName] = $DefaultSecretValues[$secretName]
+        $secretStates[$secretName] = "Created"
     }
+
+    Write-SecretsMap -Secrets $secrets
 
     Write-Host "NuGet publisher secrets initialized:"
     foreach ($secretName in $RequiredSecretNames) {
-        Write-Host "  $secretName [$($secretStates[$secretName])]"
-    }
-}
-
-function Convert-SecretValueToText {
-    param(
-        [object]$Value
-    )
-
-    if ($null -eq $Value) {
-        return "null"
-    }
-
-    if ([string]::Empty -eq [string]$Value) {
-        return "empty"
-    }
-
-    return [string]$Value
-}
-
-function Write-NuGetSecretsTable {
-    param(
-        [Parameter(Mandatory = $true)]
-        [object[]]$Rows
-    )
-
-    $nameHeader = "Name"
-    $valueHeader = "Value"
-    $nameWidth = $nameHeader.Length
-    $valueWidth = $valueHeader.Length
-
-    foreach ($row in $Rows) {
-        $nameWidth = [Math]::Max($nameWidth, ([string]$row.Name).Length)
-        $valueWidth = [Math]::Max($valueWidth, (Convert-SecretValueToText -Value $row.Value).Length)
-    }
-
-    Write-Host $nameHeader.PadRight($nameWidth) -ForegroundColor Magenta -NoNewline
-    Write-Host "  " -NoNewline
-    Write-Host $valueHeader.PadRight($valueWidth) -ForegroundColor Magenta
-    Write-Host ("─" * $nameWidth) -NoNewline
-    Write-Host "  " -NoNewline
-    Write-Host ("─" * $valueWidth)
-
-    foreach ($row in $Rows) {
-        $valueText = Convert-SecretValueToText -Value $row.Value
-        Write-Host ([string]$row.Name).PadRight($nameWidth) -ForegroundColor Blue -NoNewline
-        Write-Host "  " -NoNewline
-
-        if ($null -eq $row.Value -or [string]::Empty -eq [string]$row.Value) {
-            Write-Host $valueText.PadRight($valueWidth) -ForegroundColor Cyan
+        $defaultValue = $DefaultSecretValues[$secretName]
+        $displayValue = if ($null -eq $defaultValue) {
+            "null"
+        }
+        elseif ($defaultValue -is [bool]) {
+            $defaultValue.ToString().ToLowerInvariant()
         }
         else {
-            Write-Host $valueText.PadRight($valueWidth)
+            [string]$defaultValue
         }
+        Write-Host "  $secretName [$($secretStates[$secretName])] Default: $displayValue"
     }
 }
 
@@ -273,13 +554,13 @@ function Get-ConfiguredSecret {
         [string]$Name
     )
 
-    $value = Invoke-SecretsManager -Parameters @{ Get = $Name }
+    $secrets = Read-SecretsMap
 
-    if ($null -eq $value) {
+    if (-not $secrets.Contains($Name)) {
         return $null
     }
 
-    return [string]$value
+    return $secrets[$Name]
 }
 
 function Get-EnvironmentConfiguredValue {
@@ -320,7 +601,7 @@ function Get-RequiredResolvedConfiguredValue {
 
     $value = Get-ResolvedConfiguredValue -Name $Name
 
-    if ([string]::IsNullOrWhiteSpace($value)) {
+    if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) {
         throw "Required value '$Name' is missing, null, or empty. Configure it in an environment variable or secret before running -Publish."
     }
 
@@ -356,6 +637,11 @@ function Get-RequiredResolvedConfiguredBoolean {
     )
 
     $value = Get-RequiredResolvedConfiguredValue -Name $Name
+
+    if ($value -is [bool]) {
+        return [bool]$value
+    }
+
     $parsed = $false
 
     if (-not [bool]::TryParse($value, [ref]$parsed)) {
@@ -365,15 +651,88 @@ function Get-RequiredResolvedConfiguredBoolean {
     return $parsed
 }
 
-function Show-NuGetSecrets {
-    $rows = foreach ($secretName in $RequiredSecretNames) {
-        [PSCustomObject]@{
-            Name = $secretName
-            Value = Get-ConfiguredSecret -Name $secretName
-        }
+function Assert-NuGetSourceEndpoint {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Source
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Source)) {
+        return
     }
 
-    Write-NuGetSecretsTable -Rows @($rows)
+    $sourceUri = $null
+    if (-not [System.Uri]::TryCreate($Source, [System.UriKind]::Absolute, [ref]$sourceUri)) {
+        throw "NUGET_SOURCE must be an absolute HTTP/HTTPS URL. Current value: $Source"
+    }
+
+    if ($sourceUri.Scheme -notin @("http", "https")) {
+        throw "NUGET_SOURCE must use HTTP or HTTPS. Current value: $Source"
+    }
+
+    try {
+        Invoke-WebRequest -Uri $sourceUri -Method Head -UseBasicParsing -TimeoutSec 20 | Out-Null
+        return
+    }
+    catch {
+        if ($_.Exception.Response -and $_.Exception.Response.StatusCode -in @(
+                [System.Net.HttpStatusCode]::Unauthorized,
+                [System.Net.HttpStatusCode]::Forbidden
+            )) {
+            return
+        }
+
+        try {
+            Invoke-WebRequest -Uri $sourceUri -Method Get -UseBasicParsing -TimeoutSec 20 | Out-Null
+            return
+        }
+        catch {
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode -in @(
+                    [System.Net.HttpStatusCode]::Unauthorized,
+                    [System.Net.HttpStatusCode]::Forbidden
+                )) {
+                return
+            }
+
+            throw "NUGET_SOURCE endpoint does not exist or is not reachable: $Source"
+        }
+    }
+}
+
+function Convert-NuGetSecretForOutput {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($Name -ne "NUGET_INCLUDE_SYMBOLS" -or $null -eq $Value) {
+        return $Value
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $Value
+    }
+
+    $parsed = $false
+    if ([bool]::TryParse([string]$Value, [ref]$parsed)) {
+        return $parsed
+    }
+
+    return $Value
+}
+
+function Show-NuGetSecrets {
+    $values = [ordered]@{}
+
+    foreach ($secretName in $RequiredSecretNames) {
+        $values[$secretName] = Convert-NuGetSecretForOutput -Name $secretName -Value (Get-ConfiguredSecret -Name $secretName)
+    }
+
+    return $values
 }
 
 function Set-ConfiguredSecret {
@@ -381,300 +740,25 @@ function Set-ConfiguredSecret {
         [Parameter(Mandatory = $true)]
         [string]$Name,
 
-        [Parameter(Mandatory = $true)]
+        [AllowNull()]
         [AllowEmptyString()]
-        [string]$Value
+        [object]$Value
     )
 
-    Invoke-SecretsManager -Parameters @{
-        Add = $Name
-        Value = $Value
-        Force = $true
-    } | Out-Null
-}
-
-function Add-ProvidedParameterName {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
-
-    if ($script:ProvidedParameterNames -notcontains $Name) {
-        $script:ProvidedParameterNames += $Name
-    }
-}
-
-function Remove-ProvidedParameterName {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
-
-    $script:ProvidedParameterNames = @($script:ProvidedParameterNames | Where-Object { $_ -ne $Name })
-}
-
-function Get-SetCommandTokens {
-    $errors = $null
-    $source = if (-not [string]::IsNullOrWhiteSpace($ScriptInvocationStatement)) {
-        $ScriptInvocationStatement
-    }
-    else {
-        [Environment]::CommandLine
-    }
-
-    $tokens = [System.Management.Automation.PSParser]::Tokenize($source, [ref]$errors)
-
-    if ($errors -and $errors.Count -gt 0) {
-        return @()
-    }
-
-    $scriptTokenIndex = -1
-
-    for ($i = 0; $i -lt $tokens.Count; $i++) {
-        if ($tokens[$i].Content -like "*NugetPublisher.ps1" -or $tokens[$i].Content -like "*NugetPublisherPs.ps1") {
-            $scriptTokenIndex = $i
-            break
-        }
-    }
-
-    if ($scriptTokenIndex -lt 0 -or $scriptTokenIndex -ge ($tokens.Count - 1)) {
-        return @()
-    }
-
-    return @($tokens | Select-Object -Skip ($scriptTokenIndex + 1))
-}
-
-function Read-OptionalRemainingValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        [AllowEmptyString()]
-        [string[]]$Arguments,
-
-        [Parameter(Mandatory = $true)]
-        [ref]$Index
-    )
-
-    $nextIndex = $Index.Value + 1
-
-    if ($nextIndex -ge $Arguments.Count) {
-        $script:IgnoredSetArguments = $true
-        return $null
-    }
-
-    $nextValue = $Arguments[$nextIndex]
-
-    if ($nextValue -like "-*") {
-        $script:IgnoredSetArguments = $true
-        return $null
-    }
-
-    $Index.Value = $nextIndex
-    return $nextValue
-}
-
-function Read-OptionalTokenValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        [object[]]$Tokens,
-
-        [Parameter(Mandatory = $true)]
-        [ref]$Index
-    )
-
-    $nextIndex = $Index.Value + 1
-
-    if ($nextIndex -ge $Tokens.Count) {
-        $script:IgnoredSetArguments = $true
-        return $null
-    }
-
-    $nextToken = $Tokens[$nextIndex]
-
-    if ($nextToken.Type -eq "CommandParameter") {
-        $script:IgnoredSetArguments = $true
-        return $null
-    }
-
-    $Index.Value = $nextIndex
-    return $nextToken.Content
-}
-
-function Read-SetRemainingArguments {
-    $tokens = Get-SetCommandTokens
-
-    if ($tokens.Count -gt 0) {
-        for ($i = 0; $i -lt $tokens.Count; $i++) {
-            $token = $tokens[$i]
-
-            if ($token.Type -ne "CommandParameter") {
-                continue
-            }
-
-            $name = $token.Content.TrimStart("-")
-            $inlineValue = $null
-
-            if ($name.Contains(":")) {
-                $parts = $name.Split(":", 2)
-                $name = $parts[0]
-                $inlineValue = $parts[1]
-            }
-
-            switch ($name.ToLowerInvariant()) {
-                "set" { }
-                "apikey" {
-                    $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalTokenValue -Tokens $tokens -Index ([ref]$i) }
-
-                    if ($null -eq $value) {
-                        Remove-ProvidedParameterName -Name "ApiKey"
-                    }
-                    else {
-                        $script:ApiKey = $value
-                        Add-ProvidedParameterName -Name "ApiKey"
-                    }
-                }
-                "source" {
-                    $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalTokenValue -Tokens $tokens -Index ([ref]$i) }
-
-                    if ($null -eq $value) {
-                        Remove-ProvidedParameterName -Name "Source"
-                    }
-                    else {
-                        $script:Source = $value
-                        Add-ProvidedParameterName -Name "Source"
-                    }
-                }
-                "csproj" {
-                    $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalTokenValue -Tokens $tokens -Index ([ref]$i) }
-
-                    if ($null -eq $value) {
-                        Remove-ProvidedParameterName -Name "Csproj"
-                    }
-                    else {
-                        $script:Csproj = $value
-                        Add-ProvidedParameterName -Name "Csproj"
-                    }
-                }
-                "configuration" {
-                    $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalTokenValue -Tokens $tokens -Index ([ref]$i) }
-
-                    if ($null -eq $value) {
-                        Remove-ProvidedParameterName -Name "Configuration"
-                    }
-                    else {
-                        $script:Configuration = $value
-                        Add-ProvidedParameterName -Name "Configuration"
-                    }
-                }
-                "includesymbols" {
-                    $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalTokenValue -Tokens $tokens -Index ([ref]$i) }
-
-                    if ($null -eq $value) {
-                        Remove-ProvidedParameterName -Name "IncludeSymbols"
-                    }
-                    else {
-                        $script:IncludeSymbols = $value
-                        Add-ProvidedParameterName -Name "IncludeSymbols"
-                    }
-                }
-                default {
-                    throw "Unknown -Set argument: -$name"
-                }
-            }
-        }
-
-        return
-    }
-
-    if (-not $RemainingArguments -or $RemainingArguments.Count -eq 0) {
-        foreach ($name in @("ApiKey", "Source", "Csproj", "Configuration", "IncludeSymbols")) {
-            if ($ProvidedParameterNames -contains $name) {
-                Remove-ProvidedParameterName -Name $name
-                $script:IgnoredSetArguments = $true
-            }
-        }
-
-        return
-    }
-
-    for ($i = 0; $i -lt $RemainingArguments.Count; $i++) {
-        $argument = $RemainingArguments[$i]
-
-        if ($argument -notlike "-*") {
-            throw "Unexpected argument for -Set: $argument"
-        }
-
-        $name = $argument.TrimStart("-")
-        $inlineValue = $null
-
-        if ($name.Contains(":")) {
-            $parts = $name.Split(":", 2)
-            $name = $parts[0]
-            $inlineValue = $parts[1]
-        }
-
-        switch ($name.ToLowerInvariant()) {
-            "apikey" {
-                $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalRemainingValue -Arguments $RemainingArguments -Index ([ref]$i) }
-
-                if ($null -ne $value) {
-                    $script:ApiKey = $value
-                    Add-ProvidedParameterName -Name "ApiKey"
-                }
-            }
-            "source" {
-                $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalRemainingValue -Arguments $RemainingArguments -Index ([ref]$i) }
-
-                if ($null -ne $value) {
-                    $script:Source = $value
-                    Add-ProvidedParameterName -Name "Source"
-                }
-            }
-            "csproj" {
-                $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalRemainingValue -Arguments $RemainingArguments -Index ([ref]$i) }
-
-                if ($null -ne $value) {
-                    $script:Csproj = $value
-                    Add-ProvidedParameterName -Name "Csproj"
-                }
-            }
-            "configuration" {
-                $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalRemainingValue -Arguments $RemainingArguments -Index ([ref]$i) }
-
-                if ($null -ne $value) {
-                    $script:Configuration = $value
-                    Add-ProvidedParameterName -Name "Configuration"
-                }
-            }
-            "includesymbols" {
-                $value = if ($null -ne $inlineValue) { $inlineValue } else { Read-OptionalRemainingValue -Arguments $RemainingArguments -Index ([ref]$i) }
-
-                if ($null -ne $value) {
-                    $script:IncludeSymbols = $value
-                    Add-ProvidedParameterName -Name "IncludeSymbols"
-                }
-            }
-            default {
-                throw "Unknown -Set argument: -$name"
-            }
-        }
-    }
+    $secrets = Read-SecretsMap
+    $secrets[$Name] = $Value
+    Write-SecretsMap -Secrets $secrets
 }
 
 function Set-NuGetSecrets {
     $updates = [ordered]@{}
-    $invalidParameters = @()
     $setParameterNames = @(
         "ApiKey",
         "Source",
-        "Csproj",
         "Configuration",
         "IncludeSymbols"
     ) |
         Where-Object { $ProvidedParameterNames -contains $_ }
-
-    if ($ProvidedParameterNames -contains "Debug") {
-        throw "Use -Set -Configuration Debug instead of -Set -Debug."
-    }
 
     if ($ProvidedParameterNames -contains "ApiKey") {
         if ($null -eq $ApiKey) {
@@ -690,16 +774,17 @@ function Set-NuGetSecrets {
             # Null means "leave this secret unchanged".
         }
         else {
-            $updates["NUGET_SOURCE"] = [string]$Source
-        }
-    }
+            if (-not [string]::IsNullOrWhiteSpace([string]$Source)) {
+                try {
+                    Assert-NuGetSourceEndpoint -Source ([string]$Source)
+                }
+                catch {
+                    Write-Host "NUGET_SOURCE is not valid: $($_.Exception.Message)"
+                    return $false
+                }
+            }
 
-    if ($ProvidedParameterNames -contains "Csproj") {
-        if ($null -eq $Csproj) {
-            # Null means "leave this secret unchanged".
-        }
-        else {
-            $updates["NUGET_CSPROJ"] = [string]$Csproj
+            $updates["NUGET_SOURCE"] = [string]$Source
         }
     }
 
@@ -708,7 +793,8 @@ function Set-NuGetSecrets {
             # Null means "leave this secret unchanged".
         }
         elseif (-not [string]::IsNullOrEmpty([string]$Configuration) -and [string]$Configuration -notin @("Debug", "Release")) {
-            throw "Configuration must be Debug or Release."
+            Write-Host "NUGET_CONFIGURATION is not valid. Use Debug, Release, empty, or null."
+            return $false
         }
         else {
             $updates["NUGET_CONFIGURATION"] = [string]$Configuration
@@ -720,196 +806,280 @@ function Set-NuGetSecrets {
             # Null means "leave this secret unchanged".
         }
         else {
-            $parsedIncludeSymbols = $false
-
-            if (-not [bool]::TryParse([string]$IncludeSymbols, [ref]$parsedIncludeSymbols)) {
-                throw "IncludeSymbols must be True or False."
-            }
-
-            $updates["NUGET_INCLUDE_SYMBOLS"] = [string]$parsedIncludeSymbols
+            $updates["NUGET_INCLUDE_SYMBOLS"] = [bool]$IncludeSymbols
         }
-    }
-
-    if ($invalidParameters.Count -gt 0) {
-        throw "These -Set values cannot be null or empty: $($invalidParameters -join ', ')."
     }
 
     if ($setParameterNames.Count -eq 0) {
-        if ($IgnoredSetArguments) {
-            Write-Host "No NuGet publisher secrets updated."
-            return
-        }
-
-        throw "Use -Set with at least one value: -ApiKey, -Source, -Csproj, -Configuration, or -IncludeSymbols."
+        throw "Use -Set with at least one value: -ApiKey, -Source, -Configuration, or -IncludeSymbols."
     }
 
     if ($updates.Count -eq 0) {
-        Write-Host "No NuGet publisher secrets updated."
-        return
+        return $false
     }
 
     foreach ($entry in $updates.GetEnumerator()) {
         Set-ConfiguredSecret -Name $entry.Key -Value $entry.Value
     }
 
-    Write-Host "NuGet publisher secrets updated:"
-    foreach ($secretName in $updates.Keys) {
-        Write-Host "  $secretName"
+    return $true
+}
+
+function Invoke-NuGetPublish {
+    $publishStage = "ResolveConfiguration"
+    $projectFullPath = $null
+    $packageSearchDirectory = $null
+    $packages = @()
+
+    try {
+        $ApiKey = Get-RequiredResolvedConfiguredValue -Name "NUGET_API_KEY"
+        $Source = Get-RequiredResolvedConfiguredValue -Name "NUGET_SOURCE"
+        $Configuration = Get-RequiredResolvedConfiguredValue -Name "NUGET_CONFIGURATION"
+
+        if ($Configuration -notin @("Debug", "Release")) {
+            throw "NUGET_CONFIGURATION must be Debug or Release. Current value: $Configuration"
+        }
+
+        Assert-NuGetSourceEndpoint -Source $Source
+
+        $SkipPack = $DefaultSkipPack
+        $SkipPush = $DefaultSkipPush
+        $IncludeSymbols = Get-RequiredResolvedConfiguredBoolean -Name "NUGET_INCLUDE_SYMBOLS"
+        $NoRestore = $DefaultNoRestore
+
+        if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            throw "The dotnet CLI was not found on PATH."
+        }
+
+        $projectFullPath = Get-ProjectJsonProjectPath
+
+        if (-not (Test-Path -LiteralPath $projectFullPath)) {
+            throw "Project path does not exist: $projectFullPath"
+        }
+
+        $projectDirectory = Split-Path -Parent $projectFullPath
+        $packageSearchDirectory = Join-Path $projectDirectory (Join-Path "bin" $Configuration)
+        $publishStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-5)
+
+        if (-not $SkipPack) {
+            $publishStage = "Build"
+            $buildArgs = @(
+                "build",
+                $projectFullPath,
+                "--configuration",
+                $Configuration
+            )
+
+            if ($NoRestore) {
+                $buildArgs += "--no-restore"
+            }
+
+            Invoke-LoggedCommand -FilePath "dotnet" -Arguments $buildArgs
+
+            $publishStage = "Pack"
+            $packArgs = @(
+                "pack",
+                $projectFullPath,
+                "--configuration",
+                $Configuration,
+                "--no-build"
+            )
+
+            if ($NoRestore) {
+                $packArgs += "--no-restore"
+            }
+
+            if ($IncludeSymbols) {
+                $packArgs += @("--include-symbols", "--include-source")
+            }
+
+            Invoke-LoggedCommand -FilePath "dotnet" -Arguments $packArgs
+        }
+
+        $publishStage = "FindPackages"
+        $packages = if (Test-Path -LiteralPath $packageSearchDirectory -PathType Container) {
+            @(
+                Get-ChildItem -LiteralPath $packageSearchDirectory -Filter "*.nupkg" -File -Recurse
+                Get-ChildItem -LiteralPath $packageSearchDirectory -Filter "*.snupkg" -File -Recurse
+            )
+        }
+        else {
+            @()
+        }
+
+        $packages = @($packages |
+            Where-Object { $_.Name -notlike "*.symbols.nupkg" } |
+            Where-Object { $SkipPack -or $_.LastWriteTimeUtc -ge $publishStartedAtUtc } |
+            Sort-Object `
+                @{ Expression = { if ($_.Extension -eq ".snupkg") { 1 } else { 0 } }; Ascending = $true },
+                @{ Expression = "LastWriteTimeUtc"; Descending = $true })
+
+        if (-not $packages) {
+            throw "No .nupkg or .snupkg files were found in $packageSearchDirectory."
+        }
+
+        $symbolPackages = @($packages | Where-Object { $_.Extension -eq ".snupkg" })
+
+        if ($SkipPush) {
+            return [PSCustomObject]@{
+                Success = $true
+                Command = "Publish"
+                Stage = "Completed"
+                Published = $false
+                Message = "Packages created."
+                ProjectPath = $projectFullPath
+                Configuration = $Configuration
+                Source = $Source
+                IncludeSymbols = $IncludeSymbols
+                Packages = @($packages | ForEach-Object { $_.FullName })
+                SymbolPackages = @($symbolPackages | ForEach-Object { $_.FullName })
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($ApiKey)) {
+            throw "NuGet API key is required. Configure NUGET_API_KEY in an environment variable or secret."
+        }
+
+        $publishStage = "Push"
+        foreach ($package in $packages) {
+            $pushArgs = @(
+                "nuget",
+                "push",
+                $package.FullName,
+                "--api-key",
+                $ApiKey,
+                "--source",
+                $Source,
+                "--skip-duplicate"
+            )
+
+            $pushDisplayArgs = @(
+                "nuget",
+                "push",
+                $package.FullName,
+                "--api-key",
+                "***",
+                "--source",
+                $Source,
+                "--skip-duplicate"
+            )
+
+            Invoke-LoggedCommand -FilePath "dotnet" -Arguments $pushArgs -DisplayArguments $pushDisplayArgs
+        }
+
+        return [PSCustomObject]@{
+            Success = $true
+            Command = "Publish"
+            Stage = "Completed"
+            Published = $true
+            Message = "NuGet publish completed."
+            ProjectPath = $projectFullPath
+            Configuration = $Configuration
+            Source = $Source
+            IncludeSymbols = $IncludeSymbols
+            Packages = @($packages | ForEach-Object { $_.FullName })
+            SymbolPackages = @($symbolPackages | ForEach-Object { $_.FullName })
+        }
+    }
+    catch {
+        $_.Exception.Data["Command"] = "Publish"
+        $_.Exception.Data["Stage"] = $publishStage
+        $_.Exception.Data["Published"] = $false
+        if (-not [string]::IsNullOrWhiteSpace($projectFullPath)) {
+            $_.Exception.Data["ProjectPath"] = $projectFullPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($packageSearchDirectory)) {
+            $_.Exception.Data["PackageSearchDirectory"] = $packageSearchDirectory
+        }
+        throw
     }
 }
 
-if ($PSBoundParameters.Count -eq 0 -or $PSCmdlet.ParameterSetName -eq "Help" -or $Help) {
-    Show-Usage
-    return
-}
-
-if ($PSCmdlet.ParameterSetName -eq "Version" -or $Version) {
-    Show-Version
-    return
-}
-
-if ($Init) {
-    Initialize-NuGetSecrets
-    return
-}
-
-if ($List) {
-    Show-NuGetSecrets
-    return
-}
-
-if ($Edit) {
-    $editParameters = @{ Edit = $true }
-
-    if (-not [string]::IsNullOrWhiteSpace($Editor)) {
-        $editParameters["Editor"] = $Editor
+function Invoke-Main {
+    if ($ProvidedParameterNames.Count -eq 0 -or $ProvidedParameterNames -contains "Help") {
+        return Show-Usage
     }
 
-    Invoke-SecretsManager -Parameters $editParameters | Out-Null
-    return
-}
-
-if ($Set) {
-    Read-SetRemainingArguments
-    Set-NuGetSecrets
-    return
-}
-
-$ApiKey = Get-RequiredResolvedConfiguredValue -Name "NUGET_API_KEY"
-$Source = Get-RequiredResolvedConfiguredValue -Name "NUGET_SOURCE"
-$ProjectPath = Get-RequiredResolvedConfiguredValue -Name "NUGET_CSPROJ"
-$Configuration = Get-RequiredResolvedConfiguredValue -Name "NUGET_CONFIGURATION"
-
-if ($Configuration -notin @("Debug", "Release")) {
-    throw "NUGET_CONFIGURATION must be Debug or Release. Current value: $Configuration"
-}
-
-$SkipPack = $DefaultSkipPack
-$SkipPush = $DefaultSkipPush
-$IncludeSymbols = Get-RequiredResolvedConfiguredBoolean -Name "NUGET_INCLUDE_SYMBOLS"
-$NoRestore = $DefaultNoRestore
-
-if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
-    throw "Project path is required. Configure NUGET_CSPROJ before running -Publish."
-}
-
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    throw "The dotnet CLI was not found on PATH."
-}
-
-$projectFullPath = Resolve-FullPath -Path $ProjectPath
-
-if (-not (Test-Path -LiteralPath $projectFullPath)) {
-    throw "Project path does not exist: $projectFullPath"
-}
-
-$projectDirectory = Split-Path -Parent $projectFullPath
-$packageSearchDirectory = Join-Path $projectDirectory (Join-Path "bin" $Configuration)
-$publishStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-5)
-
-if (-not $SkipPack) {
-    $buildArgs = @(
-        "build",
-        $projectFullPath,
-        "--configuration",
-        $Configuration
-    )
-
-    if ($NoRestore) {
-        $buildArgs += "--no-restore"
+    if ($ProvidedParameterNames -contains "Version") {
+        return Show-Version
     }
 
-    Invoke-LoggedCommand -FilePath "dotnet" -Arguments $buildArgs
-
-    $packArgs = @(
-        "pack",
-        $projectFullPath,
-        "--configuration",
-        $Configuration,
-        "--no-build"
-    )
-
-    if ($NoRestore) {
-        $packArgs += "--no-restore"
+    if ($ProvidedParameterNames -contains "Init") {
+        Initialize-NuGetSecrets
+        return
     }
 
-    if ($IncludeSymbols) {
-        $packArgs += @("--include-symbols", "--include-source")
+    if ($ProvidedParameterNames -contains "List") {
+        return Show-NuGetSecrets
     }
 
-    Invoke-LoggedCommand -FilePath "dotnet" -Arguments $packArgs
+    if ($ProvidedParameterNames -contains "Edit") {
+        $editParameters = @{ Edit = $true }
+
+        if (-not [string]::IsNullOrWhiteSpace($Editor)) {
+            $editParameters["Editor"] = $Editor
+            Write-Host "Launching editor: $Editor"
+        }
+        else {
+            Write-Host "Launching default editor from DevSecretsManagerPs."
+        }
+
+        Invoke-SecretsManager -Parameters $editParameters | Out-Null
+        return
+    }
+
+    if ($ProvidedParameterNames -contains "Set") {
+        return Set-NuGetSecrets
+    }
+
+    if ($ProvidedParameterNames -contains "Publish") {
+        return Invoke-NuGetPublish
+    }
+
+    return Show-Usage
 }
 
-$packages = if (Test-Path -LiteralPath $packageSearchDirectory -PathType Container) {
-    Get-ChildItem -LiteralPath $packageSearchDirectory -Filter "*.nupkg" -File -Recurse
+try {
+    $ProvidedParameterNames = Get-ProvidedParameterNames
+    $result = Invoke-Main
+
+    if ($ProvidedParameterNames.Count -eq 0 -or $ProvidedParameterNames -contains "Help") {
+        Write-Output $result
+        return
+    }
+
+    if ($ProvidedParameterNames -contains "Init" -or $ProvidedParameterNames -contains "Edit") {
+        return
+    }
+
+    Write-JsonOutput -Value $result
 }
-else {
-    @()
+catch {
+    $errorResult = [ordered]@{
+        Success = $false
+        Error = $_.Exception.Message
+    }
+
+    if ($_.Exception.Data.Contains("Command")) {
+        $errorResult["Command"] = $_.Exception.Data["Command"]
+    }
+
+    if ($_.Exception.Data.Contains("Stage")) {
+        $errorResult["Stage"] = $_.Exception.Data["Stage"]
+    }
+
+    if ($_.Exception.Data.Contains("Published")) {
+        $errorResult["Published"] = $_.Exception.Data["Published"]
+    }
+
+    if ($_.Exception.Data.Contains("ProjectPath")) {
+        $errorResult["ProjectPath"] = $_.Exception.Data["ProjectPath"]
+    }
+
+    if ($_.Exception.Data.Contains("PackageSearchDirectory")) {
+        $errorResult["PackageSearchDirectory"] = $_.Exception.Data["PackageSearchDirectory"]
+    }
+
+    Write-JsonOutput -Value $errorResult
+    exit 1
 }
-
-$packages = $packages |
-    Where-Object { $_.Name -notlike "*.symbols.nupkg" } |
-    Where-Object { $SkipPack -or $_.LastWriteTimeUtc -ge $publishStartedAtUtc } |
-    Sort-Object LastWriteTimeUtc -Descending
-
-if (-not $packages) {
-    throw "No .nupkg files were found in $packageSearchDirectory."
-}
-
-if ($SkipPush) {
-    Write-Host "Packages created:"
-    $packages | ForEach-Object { Write-Host "  $($_.FullName)" }
-    return
-}
-
-if ([string]::IsNullOrWhiteSpace($ApiKey)) {
-    throw "NuGet API key is required. Configure NUGET_API_KEY in an environment variable or secret."
-}
-
-foreach ($package in $packages) {
-    $pushArgs = @(
-        "nuget",
-        "push",
-        $package.FullName,
-        "--api-key",
-        $ApiKey,
-        "--source",
-        $Source,
-        "--skip-duplicate"
-    )
-
-    $pushDisplayArgs = @(
-        "nuget",
-        "push",
-        $package.FullName,
-        "--api-key",
-        "***",
-        "--source",
-        $Source,
-        "--skip-duplicate"
-    )
-
-    Invoke-LoggedCommand -FilePath "dotnet" -Arguments $pushArgs -DisplayArguments $pushDisplayArgs
-}
-
-Write-Host "NuGet publish completed."
