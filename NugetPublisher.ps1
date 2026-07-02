@@ -209,7 +209,7 @@ Modes:
       SkipPack: False
       SkipPush: False
       NoRestore: False
-    Returns capturable JSON with Success, Command, Stage, Published, ProjectPath, Configuration, Source, IncludeSymbols, Packages, and SymbolPackages.
+    Returns capturable JSON with Success, Command, Stage, Published, ProjectPath, PackageId, PackageVersion, Configuration, Source, IncludeSymbols, Packages, and SymbolPackages.
 
     Examples:
       .\NugetPublisher.ps1 -Publish
@@ -357,6 +357,61 @@ function Invoke-LoggedCommand {
 
     if ($LASTEXITCODE -ne 0) {
         throw "Command failed with exit code $LASTEXITCODE."
+    }
+}
+
+function Get-MsBuildProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName
+    )
+
+    $msBuildArgs = @(
+        "msbuild",
+        $ProjectPath,
+        "-getProperty:$PropertyName"
+    )
+
+    $output = @(& dotnet @msBuildArgs 2>&1)
+
+    if ($LASTEXITCODE -ne 0) {
+        $message = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        throw "Unable to read MSBuild property '$PropertyName'. $message"
+    }
+
+    return (($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+}
+
+function Get-NuGetPackageIdentity {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath
+    )
+
+    $packageId = Get-MsBuildProperty -ProjectPath $ProjectPath -PropertyName "PackageId"
+    if ([string]::IsNullOrWhiteSpace($packageId)) {
+        $packageId = Get-MsBuildProperty -ProjectPath $ProjectPath -PropertyName "AssemblyName"
+    }
+    if ([string]::IsNullOrWhiteSpace($packageId)) {
+        $packageId = [System.IO.Path]::GetFileNameWithoutExtension($ProjectPath)
+    }
+
+    $packageVersion = Get-MsBuildProperty -ProjectPath $ProjectPath -PropertyName "PackageVersion"
+    if ([string]::IsNullOrWhiteSpace($packageVersion)) {
+        $packageVersion = Get-MsBuildProperty -ProjectPath $ProjectPath -PropertyName "Version"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($packageVersion)) {
+        throw "Unable to resolve NuGet PackageVersion for project: $ProjectPath"
+    }
+
+    return [PSCustomObject]@{
+        PackageId = $packageId
+        PackageVersion = $packageVersion
+        PackageBaseName = "$packageId.$packageVersion"
     }
 }
 
@@ -857,6 +912,7 @@ function Invoke-NuGetPublish {
             throw "Project path does not exist: $projectFullPath"
         }
 
+        $packageIdentity = Get-NuGetPackageIdentity -ProjectPath $projectFullPath
         $projectDirectory = Split-Path -Parent $projectFullPath
         $packageSearchDirectory = Join-Path $projectDirectory (Join-Path "bin" $Configuration)
         $publishStartedAtUtc = [DateTime]::UtcNow.AddSeconds(-5)
@@ -917,11 +973,21 @@ function Invoke-NuGetPublish {
             throw "No .nupkg or .snupkg files were found in $packageSearchDirectory."
         }
 
-        $packages = if ($SkipPack) {
-            @($allPackages)
+        $expectedPackageName = "$($packageIdentity.PackageBaseName).nupkg"
+        $expectedSymbolPackageName = "$($packageIdentity.PackageBaseName).snupkg"
+        $packages = @($allPackages | Where-Object { $_.Name -in @($expectedPackageName, $expectedSymbolPackageName) })
+
+        if ($packages) {
+            Write-Host "Using package identity: $($packageIdentity.PackageBaseName)"
         }
-        else {
-            @($allPackages | Where-Object { $_.LastWriteTimeUtc -ge $publishStartedAtUtc })
+
+        if (-not $packages) {
+            $packages = if ($SkipPack) {
+                @($allPackages)
+            }
+            else {
+                @($allPackages | Where-Object { $_.LastWriteTimeUtc -ge $publishStartedAtUtc })
+            }
         }
 
         if (-not $packages) {
@@ -939,11 +1005,11 @@ function Invoke-NuGetPublish {
                     $allPackages | Where-Object { $_.Name -eq $matchingSymbolPackageName }
                 )
 
-                Write-Host "No packages modified after pack start were found. Using latest package: $($latestPackage[0].FullName)"
+                Write-Host "No package matching $($packageIdentity.PackageBaseName) or modified after pack start was found. Using latest package: $($latestPackage[0].FullName)"
             }
             else {
                 $packages = @($allPackages | Select-Object -First 1)
-                Write-Host "No packages modified after pack start were found. Using latest symbol package: $($packages[0].FullName)"
+                Write-Host "No package matching $($packageIdentity.PackageBaseName) or modified after pack start was found. Using latest symbol package: $($packages[0].FullName)"
             }
         }
 
@@ -957,6 +1023,8 @@ function Invoke-NuGetPublish {
                 Published = $false
                 Message = "Packages created."
                 ProjectPath = $projectFullPath
+                PackageId = $packageIdentity.PackageId
+                PackageVersion = $packageIdentity.PackageVersion
                 Configuration = $Configuration
                 Source = $Source
                 IncludeSymbols = $IncludeSymbols
@@ -1003,6 +1071,8 @@ function Invoke-NuGetPublish {
             Published = $true
             Message = "NuGet publish completed."
             ProjectPath = $projectFullPath
+            PackageId = $packageIdentity.PackageId
+            PackageVersion = $packageIdentity.PackageVersion
             Configuration = $Configuration
             Source = $Source
             IncludeSymbols = $IncludeSymbols
