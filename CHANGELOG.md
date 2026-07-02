@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.3
+
 - Added failed process details to publish error JSON, including the displayed command, exit code, and captured stdout/stderr output.
 
 ## 2.0.2
