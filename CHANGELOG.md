@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.2
+
 - Changed publish package discovery to resolve MSBuild `PackageId` and `PackageVersion` and select `<PackageId>.<PackageVersion>.nupkg` plus the matching `.snupkg` before using timestamp or latest-package fallback.
 
 ## 2.0.1
