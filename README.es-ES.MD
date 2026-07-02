@@ -372,7 +372,7 @@ El comando publish retorna un objeto JSON capturable. Los agentes deben tratar `
 
 El JSON exitoso incluye `Success`, `Command`, `Stage`, `Published`, `ProjectPath`, `Configuration`, `Source`, `IncludeSymbols`, `Packages`, y `SymbolPackages`.
 
-Si publish falla, el comando retorna un objeto JSON de error con `Success = false`, `Command = "Publish"`, el ultimo `Stage` completado o fallido, `Published = false`, y sale con codigo `1`.
+Si publish falla, el comando retorna un objeto JSON de error con `Success = false`, `Command = "Publish"`, el ultimo `Stage` completado o fallido, `Published = false`, y sale con codigo `1`. Si falla `dotnet build`, `dotnet pack`, o `dotnet nuget push`, el JSON tambien incluye `FailedCommand`, `ExitCode`, y `CommandOutput` con las lineas stdout/stderr capturadas del proceso fallido.
 
 ## Version
 

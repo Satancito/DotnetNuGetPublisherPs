@@ -210,6 +210,7 @@ Modes:
       SkipPush: False
       NoRestore: False
     Returns capturable JSON with Success, Command, Stage, Published, ProjectPath, PackageId, PackageVersion, Configuration, Source, IncludeSymbols, Packages, and SymbolPackages.
+    If dotnet build, pack, or push fails, the error JSON includes FailedCommand, ExitCode, and CommandOutput.
 
     Examples:
       .\NugetPublisher.ps1 -Publish
@@ -352,11 +353,22 @@ function Invoke-LoggedCommand {
         [string[]]$DisplayArguments = $Arguments
     )
 
-    Write-Host "> $FilePath $($DisplayArguments -join ' ')"
-    & $FilePath @Arguments
+    $displayCommand = "$FilePath $($DisplayArguments -join ' ')"
+    Write-Host "> $displayCommand"
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command failed with exit code $LASTEXITCODE."
+    $output = @(& $FilePath @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+
+    foreach ($line in $output) {
+        Write-Host ([string]$line)
+    }
+
+    if ($exitCode -ne 0) {
+        $exception = [System.Exception]::new("Command failed with exit code $exitCode.")
+        $exception.Data["FailedCommand"] = $displayCommand
+        $exception.Data["ExitCode"] = $exitCode
+        $exception.Data["CommandOutput"] = @($output | ForEach-Object { [string]$_ })
+        throw $exception
     }
 }
 
@@ -1177,6 +1189,18 @@ catch {
 
     if ($_.Exception.Data.Contains("PackageSearchDirectory")) {
         $errorResult["PackageSearchDirectory"] = $_.Exception.Data["PackageSearchDirectory"]
+    }
+
+    if ($_.Exception.Data.Contains("FailedCommand")) {
+        $errorResult["FailedCommand"] = $_.Exception.Data["FailedCommand"]
+    }
+
+    if ($_.Exception.Data.Contains("ExitCode")) {
+        $errorResult["ExitCode"] = $_.Exception.Data["ExitCode"]
+    }
+
+    if ($_.Exception.Data.Contains("CommandOutput")) {
+        $errorResult["CommandOutput"] = $_.Exception.Data["CommandOutput"]
     }
 
     Write-JsonOutput -Value $errorResult
