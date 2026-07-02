@@ -350,6 +350,7 @@ During publish, the tool:
 - Finds generated `.nupkg` and `.snupkg` files under `<project-directory>\bin\<Configuration>`.
 - Excludes legacy `*.symbols.nupkg` packages.
 - Pushes generated package files with `dotnet nuget push`, publishing normal `.nupkg` files before `.snupkg` symbol packages.
+- For HTTP sources, creates a temporary `NuGet.Config` with `allowInsecureConnections="true"` and pushes through that temporary source entry. HTTPS sources are pushed directly.
 
 Commands run are equivalent to:
 

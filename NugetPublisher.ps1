@@ -205,6 +205,7 @@ Modes:
       NUGET_CONFIGURATION
       NUGET_INCLUDE_SYMBOLS
     Project.json in the consumer project root must contain a non-empty Project value pointing to the package .csproj.
+    HTTP sources use a temporary NuGet.Config with allowInsecureConnections=true during push.
     Internal defaults:
       SkipPack: False
       SkipPush: False
@@ -767,6 +768,49 @@ function Assert-NuGetSourceEndpoint {
     }
 }
 
+function Test-IsHttpNuGetSource {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Source
+    )
+
+    $sourceUri = [System.Uri]$Source
+    return $sourceUri.Scheme -eq "http"
+}
+
+function New-TemporaryNuGetConfigForHttpSource {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Source
+    )
+
+    $configPath = Join-Path ([System.IO.Path]::GetTempPath()) "NugetPublisher-$([System.Guid]::NewGuid()).NuGet.Config"
+    $settings = [System.Xml.XmlWriterSettings]::new()
+    $settings.Indent = $true
+    $settings.Encoding = [System.Text.UTF8Encoding]::new($false)
+
+    $writer = [System.Xml.XmlWriter]::Create($configPath, $settings)
+
+    try {
+        $writer.WriteStartDocument()
+        $writer.WriteStartElement("configuration")
+        $writer.WriteStartElement("packageSources")
+        $writer.WriteStartElement("add")
+        $writer.WriteAttributeString("key", "NuGetPublisherHttpSource")
+        $writer.WriteAttributeString("value", $Source)
+        $writer.WriteAttributeString("allowInsecureConnections", "true")
+        $writer.WriteEndElement()
+        $writer.WriteEndElement()
+        $writer.WriteEndElement()
+        $writer.WriteEndDocument()
+    }
+    finally {
+        $writer.Dispose()
+    }
+
+    return $configPath
+}
+
 function Convert-NuGetSecretForOutput {
     param(
         [Parameter(Mandatory = $true)]
@@ -897,6 +941,7 @@ function Invoke-NuGetPublish {
     $projectFullPath = $null
     $packageSearchDirectory = $null
     $packages = @()
+    $temporaryNuGetConfigPath = $null
 
     try {
         $ApiKey = Get-RequiredResolvedConfiguredValue -Name "NUGET_API_KEY"
@@ -1050,6 +1095,18 @@ function Invoke-NuGetPublish {
         }
 
         $publishStage = "Push"
+        $pushSource = $Source
+        $pushSourceDisplay = $Source
+        $pushConfigArgs = @()
+
+        if (Test-IsHttpNuGetSource -Source $Source) {
+            $temporaryNuGetConfigPath = New-TemporaryNuGetConfigForHttpSource -Source $Source
+            $pushSource = "NuGetPublisherHttpSource"
+            $pushSourceDisplay = "$Source (allowInsecureConnections)"
+            $pushConfigArgs = @("--configfile", $temporaryNuGetConfigPath)
+            Write-Host "HTTP NuGet source detected. Using temporary NuGet.Config with allowInsecureConnections=true."
+        }
+
         foreach ($package in $packages) {
             $pushArgs = @(
                 "nuget",
@@ -1058,9 +1115,11 @@ function Invoke-NuGetPublish {
                 "--api-key",
                 $ApiKey,
                 "--source",
-                $Source,
+                $pushSource,
                 "--skip-duplicate"
             )
+
+            $pushArgs += $pushConfigArgs
 
             $pushDisplayArgs = @(
                 "nuget",
@@ -1069,9 +1128,13 @@ function Invoke-NuGetPublish {
                 "--api-key",
                 "***",
                 "--source",
-                $Source,
+                $pushSourceDisplay,
                 "--skip-duplicate"
             )
+
+            if ($pushConfigArgs) {
+                $pushDisplayArgs += @("--configfile", $temporaryNuGetConfigPath)
+            }
 
             Invoke-LoggedCommand -FilePath "dotnet" -Arguments $pushArgs -DisplayArguments $pushDisplayArgs
         }
@@ -1103,6 +1166,11 @@ function Invoke-NuGetPublish {
             $_.Exception.Data["PackageSearchDirectory"] = $packageSearchDirectory
         }
         throw
+    }
+    finally {
+        if (-not [string]::IsNullOrWhiteSpace($temporaryNuGetConfigPath) -and (Test-Path -LiteralPath $temporaryNuGetConfigPath -PathType Leaf)) {
+            Remove-Item -LiteralPath $temporaryNuGetConfigPath -Force
+        }
     }
 }
 

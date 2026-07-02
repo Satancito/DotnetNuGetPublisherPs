@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added HTTP NuGet source push support by using a temporary `NuGet.Config` with `allowInsecureConnections="true"` when `NUGET_SOURCE` uses `http://`.
+
 ## 2.0.3
 
 - Added failed process details to publish error JSON, including the displayed command, exit code, and captured stdout/stderr output.

@@ -350,6 +350,7 @@ Durante publish, la herramienta:
 - Busca archivos `.nupkg` y `.snupkg` generados debajo de `<project-directory>\bin\<Configuration>`.
 - Excluye paquetes legacy `*.symbols.nupkg`.
 - Publica los archivos de paquete generados con `dotnet nuget push`, publicando los `.nupkg` normales antes que los paquetes de simbolos `.snupkg`.
+- Para sources HTTP, crea un `NuGet.Config` temporal con `allowInsecureConnections="true"` y publica mediante esa entrada temporal del source. Los sources HTTPS se publican directamente.
 
 Los comandos ejecutados son equivalentes a:
 
