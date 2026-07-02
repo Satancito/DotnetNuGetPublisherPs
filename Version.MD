@@ -23,7 +23,7 @@ Both README files are part of this repository and must stay aligned when usage, 
 The script version is stored in `NugetPublisher.ps1`:
 
 ```powershell
-$ScriptVersion = "1.0.6"
+$ScriptVersion = "2.0.0"
 ```
 
 The version command must return this value:
@@ -35,7 +35,7 @@ The version command must return this value:
 Expected output shape:
 
 ```text
-"1.0.6"
+"2.0.0"
 ```
 
 ## Decide The Next Version

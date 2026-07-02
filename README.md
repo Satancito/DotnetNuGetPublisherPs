@@ -19,7 +19,7 @@ Current version:
 Returns:
 
 ```text
-"1.0.6"
+"2.0.0"
 ```
 
 `-Version` and `-Help` do not initialize secrets, create files, build projects, pack packages, or publish artifacts.
@@ -385,7 +385,7 @@ If publish fails, the command returns a JSON error object with `Success = false`
 Returns the script version as a JSON string.
 
 ```text
-"1.0.6"
+"2.0.0"
 ```
 
 ## Recommended Workflow

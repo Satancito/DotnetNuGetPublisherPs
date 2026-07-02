@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.0
+
 - Aligned NuGet publisher command behavior with the shared publisher CLI style while keeping NuGet-specific parameters.
 - Added formal `-Set` parameters for `-ApiKey`, `-Source`, `-Configuration`, and `-IncludeSymbols`.
 - Changed package project resolution to read the consumer `Project.json` `Project` property instead of storing `NUGET_CSPROJ` as a secret.
