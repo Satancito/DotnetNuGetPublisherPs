@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed package discovery fallback after `dotnet pack` so publish can use the latest existing `.nupkg` and matching `.snupkg` when no package timestamp is newer than the publish start time.
+
 ## 2.0.0
 
 - Aligned NuGet publisher command behavior with the shared publisher CLI style while keeping NuGet-specific parameters.

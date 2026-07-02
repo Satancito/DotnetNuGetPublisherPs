@@ -897,7 +897,7 @@ function Invoke-NuGetPublish {
         }
 
         $publishStage = "FindPackages"
-        $packages = if (Test-Path -LiteralPath $packageSearchDirectory -PathType Container) {
+        $allPackages = if (Test-Path -LiteralPath $packageSearchDirectory -PathType Container) {
             @(
                 Get-ChildItem -LiteralPath $packageSearchDirectory -Filter "*.nupkg" -File -Recurse
                 Get-ChildItem -LiteralPath $packageSearchDirectory -Filter "*.snupkg" -File -Recurse
@@ -907,15 +907,44 @@ function Invoke-NuGetPublish {
             @()
         }
 
-        $packages = @($packages |
+        $allPackages = @($allPackages |
             Where-Object { $_.Name -notlike "*.symbols.nupkg" } |
-            Where-Object { $SkipPack -or $_.LastWriteTimeUtc -ge $publishStartedAtUtc } |
             Sort-Object `
                 @{ Expression = { if ($_.Extension -eq ".snupkg") { 1 } else { 0 } }; Ascending = $true },
                 @{ Expression = "LastWriteTimeUtc"; Descending = $true })
 
-        if (-not $packages) {
+        if (-not $allPackages) {
             throw "No .nupkg or .snupkg files were found in $packageSearchDirectory."
+        }
+
+        $packages = if ($SkipPack) {
+            @($allPackages)
+        }
+        else {
+            @($allPackages | Where-Object { $_.LastWriteTimeUtc -ge $publishStartedAtUtc })
+        }
+
+        if (-not $packages) {
+            $latestPackage = @($allPackages |
+                Where-Object { $_.Extension -eq ".nupkg" } |
+                Sort-Object LastWriteTimeUtc -Descending |
+                Select-Object -First 1)
+
+            if ($latestPackage) {
+                $latestPackageBaseName = [System.IO.Path]::GetFileNameWithoutExtension($latestPackage[0].Name)
+                $matchingSymbolPackageName = "$latestPackageBaseName.snupkg"
+
+                $packages = @(
+                    $latestPackage[0]
+                    $allPackages | Where-Object { $_.Name -eq $matchingSymbolPackageName }
+                )
+
+                Write-Host "No packages modified after pack start were found. Using latest package: $($latestPackage[0].FullName)"
+            }
+            else {
+                $packages = @($allPackages | Select-Object -First 1)
+                Write-Host "No packages modified after pack start were found. Using latest symbol package: $($packages[0].FullName)"
+            }
         }
 
         $symbolPackages = @($packages | Where-Object { $_.Extension -eq ".snupkg" })
